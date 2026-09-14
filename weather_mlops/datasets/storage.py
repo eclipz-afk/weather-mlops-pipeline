@@ -49,26 +49,18 @@ def _layer_prefix(layer: Layer) -> str:
         )
     return _LAYER_PREFIXES[layer]
 
-def _hour_partition(ts: pd.Timestamp) -> tuple[int, int, int, int]:
-    """Extract (year, month, day, hour) in UTC from a timestamp."""
+def _day_partition(ts: pd.Timestamp) -> tuple[int, int, int]:
+    """Extract the UTC calendar day from a timestamp."""
     ts_utc = ts.tz_convert("UTC") if ts.tz is not None else ts
-    return ts_utc.year, ts_utc.month, ts_utc.day, ts_utc.hour
+    return ts_utc.year, ts_utc.month, ts_utc.day
 
 
 
 def weather_partition_key(layer: str, timestamp: pd.Timestamp) -> str:
-    """Return the object key for one hourly weather partition."""
-    
+    """Return the object key for one daily weather partition."""
     prefix = _layer_prefix(layer)
-    year, month, day, hour = _hour_partition(pd.Timestamp(timestamp))
-    return (
-        f"{prefix}/"
-        f"year={year:04d}/"
-        f"month={month:02d}/"
-        f"day={day:02d}/"
-        f"hour={hour:02d}/"
-        f"data.parquet"
-    )
+    year, month, day = _day_partition(pd.Timestamp(timestamp))
+    return f"{prefix}/year={year:04d}/month={month:02d}/day={day:02d}/data.parquet"
 
 def ml_split_key(name: str) -> str:
      """Return the key for an ML split Parquet file (e.g. 'train')"""
@@ -109,7 +101,7 @@ def write_partition(
     layer: Layer,
     skip_existing: bool = False,
 ) -> list[str]:
-    """Group ``df`` by UTC hour and write each group as a Parquet partition.
+    """Group ``df`` by UTC day and write each group as a Parquet partition.
 
     Parameters
     ----------
@@ -148,21 +140,25 @@ def write_partition(
     )
     
     ts = pd.to_datetime(df["timestamp"], utc=True)
-    df = df.assign(_partition_hour=ts.dt.floor("h"))
+    df = df.assign(_partition_day=ts.dt.floor("D"))
     
     written: list[str] = []
     skipped_existing = 0
     
-    for hour, group in df.groupby("_partition_hour", sort=True):
-        chunk = group.drop(columns="_partition_hour").reset_index(drop=True)
-        key = weather_partition_key(layer, hour)
+    for day, group in df.groupby("_partition_day", sort=True):
+        chunk = (
+            group.drop(columns="_partition_day")
+            .sort_values("timestamp")
+            .reset_index(drop=True)
+        )
+        key = weather_partition_key(layer, day)
         if key in existing_keys:
             skipped_existing += 1
             continue
         _put_parquet(chunk, key)
         written.append(key)
         logger.info(
-            f"wrote partition: layer={layer} hour={hour} rows={len(chunk)} key={key}"
+            f"wrote partition: layer={layer} day={day} rows={len(chunk)} key={key}"
         )
     if skipped_existing:
         logger.info(
@@ -216,16 +212,16 @@ def _read_parquet_key(key: str) -> pd.DataFrame:
     obj = client.get_object(Bucket=S3_BUCKET, Key=key)
     return pd.read_parquet(io.BytesIO(obj["Body"].read()), engine="pyarrow")
 
-def _hour_keys_between(
+def _day_keys_between(
     layer: Layer, start: pd.Timestamp, end: pd.Timestamp
 ) -> list[str]:
-    """Return hourly partition keys in the inclusive [start, end] range."""
+    """Return daily partition keys overlapping the inclusive [start, end] range."""
     start_utc = pd.Timestamp(start).tz_convert("UTC")
     end_utc = pd.Timestamp(end).tz_convert("UTC")
-    hours = pd.date_range(
-        start_utc.floor("h"), end_utc.floor("h"), freq="h", tz="UTC"
+    days = pd.date_range(
+        start_utc.floor("D"), end_utc.floor("D"), freq="D", tz="UTC"
     )
-    return [weather_partition_key(layer, hour) for hour in hours]
+    return [weather_partition_key(layer, day) for day in days]
 
 def read_weather(
     *,
@@ -245,13 +241,14 @@ def read_weather(
     Returns
     -------
     pandas.DataFrame
-        Concatenated rows, sorted by ``timestamp``, RangeIndex reset.
-        Missing partitions are silently skipped.
+        Concatenated rows, filtered to the exact requested time range, sorted
+        by ``timestamp``, RangeIndex reset. Missing partitions are silently
+        skipped.
     """
     
     start_utc = pd.Timestamp(start).tz_convert("UTC")
     end_utc = pd.Timestamp(end).tz_convert("UTC")
-    keys = _hour_keys_between(layer, start_utc, end_utc)
+    keys = _day_keys_between(layer, start_utc, end_utc)
     
     client = _get_client()
     frames: list[pd.DataFrame] = []
@@ -273,6 +270,7 @@ def read_weather(
     
     df = pd.concat(frames, ignore_index=True)
     df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.as_unit("ns")
+    df = df.loc[df["timestamp"].between(start_utc, end_utc, inclusive="both")]
     df = df.sort_values("timestamp").reset_index(drop=True)
     logger.info(
         f"read_weather: layer={layer} rows={len(df)} partitions={len(frames)}"
