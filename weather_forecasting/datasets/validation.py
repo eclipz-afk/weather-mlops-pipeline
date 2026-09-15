@@ -3,7 +3,7 @@ import pandas as pd
 import pandera.pandas as pa
 from pandera.typing import DataFrame, Series
 
-logger = logging.getLogger("weather_mlops.validation")
+logger = logging.getLogger("weather_forecasting.validation")
 
 # Schema ---------------------------------------------------------
 

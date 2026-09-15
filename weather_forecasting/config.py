@@ -75,9 +75,27 @@ NULLABLE_WEATHER_COLUMNS: tuple[str, ...] = (
     "wind_direction_10m",
 )
 
-MODEL_DIR = PROJECT_ROOT / "models"
-MLFLOW_TRACKING_URI: str = f"file:{(PROJECT_ROOT / 'mlruns').as_posix()}"
-MLFLOW_EXPERIMENT_NAME: str = "weather-temperature-forecast"
+MLFLOW_TRACKING_URI: str = os.getenv(
+    "MLFLOW_TRACKING_URI",
+    f"sqlite:///{(PROJECT_ROOT / 'mlflow.db').as_posix()}",
+)
+MLFLOW_EXPERIMENT_NAME: str = os.getenv(
+    "MLFLOW_EXPERIMENT_NAME",
+    "weather-temperature-forecast",
+)
+MLFLOW_REGISTERED_MODEL_NAME: str = os.getenv(
+    "MLFLOW_REGISTERED_MODEL_NAME",
+    "weather-temperature-forecaster",
+)
+MLFLOW_MODEL_ALIAS: str = os.getenv("MLFLOW_MODEL_ALIAS", "champion")
+SERVING_MODEL_URI: str = os.getenv(
+    "SERVING_MODEL_URI",
+    f"models:/{MLFLOW_REGISTERED_MODEL_NAME}@{MLFLOW_MODEL_ALIAS}",
+)
+SERVING_DATASET_ID: str = os.getenv(
+    "SERVING_DATASET_ID",
+    "weather-kazan-2000-2026-v1",
+)
 
 # S3-compatible object storage (MinIO locally, AWS S3 in production)
 # Credentials intentionally come only from environment variables.
@@ -94,3 +112,7 @@ S3_PROCESSED_PREFIX: str = os.getenv(
     "S3_PROCESSED_PREFIX", "processed/weather"
 ).strip("/")
 S3_ML_PREFIX: str = os.getenv("S3_ML_PREFIX", "processed/ml").strip("/")
+
+S3_REPORTS_PREFIX: str = os.getenv(
+    "S3_REPORTS_PREFIX", "reports"
+).strip("/")

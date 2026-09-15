@@ -8,7 +8,7 @@ from sklearn.metrics import(
     r2_score
 )
 
-logger = logging.getLogger("weather_mlops.model.metrics")
+logger = logging.getLogger("weather_forecasting.model.metrics")
 
 def calculate_metrics(y_true: pd.Series, y_pred: np.ndarray | pd.Series) -> dict[str, float]:
     """Compute MAE, RMSE and R^2 for a regression problem.

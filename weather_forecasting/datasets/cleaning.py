@@ -1,7 +1,7 @@
 import logging
 import pandas as pd
 
-logger = logging.getLogger("weather_mlops.cleaning")
+logger = logging.getLogger("weather_forecasting.cleaning")
 
 EXPECTED_INTERVAL = pd.Timedelta(hours=1)
 EXPECTED_TZ = "UTC"

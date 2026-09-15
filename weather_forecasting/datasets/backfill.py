@@ -1,19 +1,13 @@
-"""Historical weather backfill command.
-
-Run from the repository root:
-    python -m weather_mlops.datasets.backfill --start-date 2025-01-01 --end-date 2025-01-31
-"""
-
 import argparse
 import logging
 from datetime import date, timedelta
 
-from weather_mlops.datasets.cleaning import clean_weather
-from weather_mlops.datasets.storage import write_partition
-from weather_mlops.datasets.validation import validate_weather
-from weather_mlops.datasets.weather_api import OpenMeteoClient, response_to_dataframe
+from weather_forecasting.datasets.cleaning import clean_weather
+from weather_forecasting.datasets.storage import write_partition
+from weather_forecasting.datasets.validation import validate_weather
+from weather_forecasting.datasets.weather_api import OpenMeteoClient, response_to_dataframe
 
-logger = logging.getLogger("weather_mlops.backfill")
+logger = logging.getLogger("weather_forecasting.backfill")
 
 def _validate_date_range(start_date: str, end_date: str) -> None:
     """Raise if dates are malformed or start_date is after end_date.

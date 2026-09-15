@@ -221,6 +221,7 @@ __marimo__/
 
 # Weather MLOps: generated local artifacts
 /mlruns/
+/mlartifacts/
 /.mlflow-smoke-tmp/
 /.cache.sqlite
 /mlflow.db
@@ -231,3 +232,4 @@ __marimo__/
 /models/*.pickle
 
 /tests/
+/services/airflow/logs/

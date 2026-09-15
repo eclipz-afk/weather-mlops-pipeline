@@ -5,7 +5,7 @@ import joblib
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 
-logger = logging.getLogger("weather_mlops.model.train")
+logger = logging.getLogger("weather_forecasting.model.train")
 
 # Public API ---------------------------------------------------
 def train_model(

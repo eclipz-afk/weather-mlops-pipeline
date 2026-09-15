@@ -1,9 +1,9 @@
 import logging
 import pandas as pd
 
-from weather_mlops.models.metrics import calculate_metrics
+from weather_forecasting.models.metrics import calculate_metrics
 
-logger = logging.getLogger("weather_mlops.model.evaluate")
+logger = logging.getLogger("weather_forecasting.model.evaluate")
 
 def evaluate_model(
     model,

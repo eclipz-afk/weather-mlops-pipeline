@@ -8,9 +8,9 @@ import requests
 
 
 # Project configuration -----------------------------------
-from weather_mlops.config import HOURLY_VARIABLES, LOCATION
+from weather_forecasting.config import HOURLY_VARIABLES, LOCATION
 
-logger = logging.getLogger("weather_mlops.weather_api")
+logger = logging.getLogger("weather_forecasting.weather_api")
 
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 

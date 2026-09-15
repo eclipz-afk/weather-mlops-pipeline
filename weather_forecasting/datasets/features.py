@@ -1,8 +1,8 @@
 import logging
 import pandas as pd
-from weather_mlops.config import LOCATION
+from weather_forecasting.config import LOCATION
 
-logger = logging.getLogger("weather_mlops.features")
+logger = logging.getLogger("weather_forecasting.features")
 
 LAG_HOURS: tuple[int, ...] = (1, 2, 3, 6, 12, 24)
 

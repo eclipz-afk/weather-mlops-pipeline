@@ -1,0 +1,9 @@
+boto3==1.43.93
+joblib==1.6.0
+mlflow==3.16.0
+pandas==3.0.5
+pandera==0.33.1
+pyarrow==25.0.1
+python-dotenv==1.2.3
+requests==2.34.2
+scikit-learn==1.9.1

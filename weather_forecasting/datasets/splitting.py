@@ -3,9 +3,9 @@ import logging
 from typing import NamedTuple
 import pandas as pd
 
-from weather_mlops.datasets.features import TARGET_HORIZON, TARGET_COLUMN
+from weather_forecasting.datasets.features import TARGET_HORIZON, TARGET_COLUMN
 
-logger = logging.getLogger("weather_mlops.splitting")
+logger = logging.getLogger("weather_forecasting.splitting")
 
 NON_FEATURE_COLUMNS: tuple[str, ...] = ("timestamp", TARGET_COLUMN)
 

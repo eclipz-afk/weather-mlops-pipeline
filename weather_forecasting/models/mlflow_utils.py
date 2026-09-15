@@ -1,12 +1,13 @@
 import logging
+import os
 from typing import Any
 
 import mlflow
 import mlflow.sklearn
 
-from weather_mlops.config import MLFLOW_EXPERIMENT_NAME, MLFLOW_TRACKING_URI
+from weather_forecasting.config import MLFLOW_EXPERIMENT_NAME, MLFLOW_TRACKING_URI
 
-logger = logging.getLogger("weather_mlops.model.mlflow_utils")
+logger = logging.getLogger("weather_forecasting.model.mlflow_utils")
 
 METRIC_PREFIX = "val_"
 
@@ -43,6 +44,12 @@ def log_to_mlflow(
         If the tracking server is unreachable or logging fails.
     """
     
+    # With Dockerized MinIO, the hostname ``minio`` is resolvable only inside
+    # the Compose network. Disable MLflow's direct multipart mode because it
+    # would expose presigned URLs with that internal hostname to this Windows
+    # client. Ordinary proxy uploads keep the network boundary inside MLflow.
+    os.environ["MLFLOW_ENABLE_PROXY_MULTIPART_UPLOAD"] = "false"
+
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
     
@@ -53,7 +60,7 @@ def log_to_mlflow(
         
         mlflow.log_params(_stringify(params))
         mlflow.log_metrics(metrics)
-        mlflow.sklearn.log_model(model, artifact_path="model")
+        mlflow.sklearn.log_model(model, name=MODEL_ARTIFACT_PATH)
         
         logger.info(f"mlflow run logged: run_id={run.info.run_id} experiment={MLFLOW_EXPERIMENT_NAME}")
         return run.info.run_id
