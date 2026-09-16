@@ -1,7 +1,3 @@
-"""Promotion of a validated MLflow run to the serving alias."""
-
-from __future__ import annotations
-
 import argparse
 from dataclasses import dataclass
 
@@ -16,7 +12,6 @@ from weather_forecasting.config import (
 
 MODEL_ARTIFACT_PATH = "model"
 
-
 @dataclass(frozen=True)
 class PromotionResult:
     """Immutable description of the promoted registry version."""
@@ -25,7 +20,6 @@ class PromotionResult:
     version: str
     alias: str
     run_id: str
-
 
 def promote_run(
     run_id: str,

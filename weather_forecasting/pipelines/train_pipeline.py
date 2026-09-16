@@ -31,10 +31,10 @@ def _prefix_metrics(
 def train_and_log(
     *,
     dataset_id: str,
-    n_estimators: int = 200,
-    max_depth: int | None = None,
+    n_estimators: int = 64,
+    max_depth: int | None = 12,
     min_samples_split: int = 2,
-    min_samples_leaf: int = 1,
+    min_samples_leaf: int = 4,
     random_state: int = 143,
     n_jobs: int = 1,
     run_name: str | None = None,
@@ -119,10 +119,10 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         help="Published ML dataset version in MinIO.",
     )
-    parser.add_argument("--n-estimators", type=int, default=200)
-    parser.add_argument("--max-depth", type=int, default=None)
+    parser.add_argument("--n-estimators", type=int, default=64)
+    parser.add_argument("--max-depth", type=int, default=12)
     parser.add_argument("--min-samples-split", type=int, default=2)
-    parser.add_argument("--min-samples-leaf", type=int, default=1)
+    parser.add_argument("--min-samples-leaf", type=int, default=4)
     parser.add_argument("--random-state", type=int, default=143)
     parser.add_argument("--n-jobs", type=int, default=1)
     parser.add_argument(

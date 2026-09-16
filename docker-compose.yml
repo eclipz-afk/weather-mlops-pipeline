@@ -35,6 +35,8 @@ services:
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
       AWS_DEFAULT_REGION: ${S3_REGION}
       MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      MLFLOW_SERVER_ENABLE_JOB_EXECUTION: "false"
+      MLFLOW_SERVER_JOB_ENABLE_PERIODIC_TASKS: "false"
     volumes:
       - mlflow_data:/mlflow
     command: >-
@@ -43,7 +45,20 @@ services:
       --artifacts-destination s3://${S3_BUCKET}/mlflow-artifacts
       --host 0.0.0.0
       --port 5000
-      --allowed-hosts localhost,127.0.0.1,mlflow,mlflow:5000
+      --workers 1
+      --allowed-hosts "localhost:*,127.0.0.1:*,mlflow,mlflow:5000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=5)"
+        ]
+      interval: 10s
+      timeout: 6s
+      retries: 12
+      start_period: 20s
 
   api:
     build:
@@ -54,7 +69,7 @@ services:
       minio:
         condition: service_healthy
       mlflow:
-        condition: service_started
+        condition: service_healthy
     ports:
       - "127.0.0.1:8000:8000"
     environment:
@@ -106,7 +121,7 @@ services:
       minio:
         condition: service_healthy
       mlflow:
-        condition: service_started
+        condition: service_healthy
     environment: &airflow-environment
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_POSTGRES_PASSWORD:-airflow}@airflow-postgres/airflow
