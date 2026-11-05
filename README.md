@@ -1,772 +1,205 @@
-# Weather Temperature Forecasting — MLOps Pipeline
+# Innopolis Weather Forecasting
 
-End-to-end MLOps pipeline for **1-hour-ahead temperature forecasting** using historical weather observations.
+A small weather forecasting project for Innopolis, Tatarstan. Given the weather
+at a particular hour, the model predicts the temperature one hour later.
 
-The project implements the complete machine learning lifecycle:
+The model itself is a Random Forest. Most of the work here is around it: collecting
+weather history, keeping track of datasets, scheduling training and serving the
+result through an API. Everything runs locally with Docker Compose.
 
-* weather data ingestion from Open-Meteo;
-* data validation with Pandera;
-* raw and processed data storage in MinIO;
-* feature engineering for time-series forecasting;
-* chronological train / validation / test splitting;
-* Random Forest model training;
-* experiment tracking with MLflow;
-* model registration and promotion with MLflow Model Registry;
-* prediction serving through FastAPI;
-* web interface with Streamlit;
-* workflow orchestration with Apache Airflow;
-* containerized deployment with Docker Compose.
+![A prediction in Streamlit](docs/images/streamlit-prediction.png)
 
----
+## How it works
 
-## Architecture
+Open-Meteo supplies the hourly weather history. Raw data goes into MinIO, then
+passes Pandera validation before being saved to the processed layer. Each Parquet
+file holds one UTC day.
 
-```text
-Open-Meteo
-    │
-    ▼
-Data Ingestion
-    │
-    ▼
-Pandera Validation
-    │
-    ▼
-MinIO
-    │
-    ▼
-Feature Engineering
-    │
-    ▼
-ML Dataset
-(train / val / test)
-    │
-    ▼
-RandomForestRegressor
-    │
-    ▼
-MLflow
-    │
-    ▼
-Model Registry
-    │
-    ▼
-champion
-    │
-    ▼
-FastAPI
-    │
-    ▼
-Streamlit
+Airflow runs ingestion daily and retraining monthly. Before training, it builds
+a new dataset from the processed history and splits it into train, validation
+and test sets in chronological order. The model has to beat a simple baseline:
+next hour's temperature is the same as this hour's.
+
+MLflow stores the model, parameters and metrics. A model that passes the check
+gets the `champion` alias. FastAPI loads it at startup; Streamlit sends prediction
+requests to the API.
+
+```mermaid
+flowchart LR
+    O[Open-Meteo] --> I[Daily ingestion]
+    I --> V[Pandera validation]
+    V --> S[(MinIO: raw / processed)]
+    S --> D[Features & train / val / test]
+    D --> T[Random Forest]
+    T --> M[MLflow & Model Registry]
+    M -->|champion| A[FastAPI]
+    S -->|weather history| A
+    U[Streamlit] -->|POST /predict| A
+    AF[Airflow] -. daily .-> I
+    AF -. monthly .-> D
 ```
 
-Apache Airflow orchestrates recurring data ingestion and model retraining.
+Features include the current weather, temperature lags of 1, 2, 3, 6, 12 and
+24 hours, and calendar features in the local timezone, `Europe/Moscow`.
+Training and prediction use the same feature-building code.
 
----
+## Results
 
-## Forecasting Task
+The dataset was collected from **2020-01-01 to 2026-10-28**: 59,832 hourly
+observations and 25 features. After creating the lags and target, the usable
+train / validation / test sets contain 41,857 / 8,974 / 8,975 rows.
 
-The model predicts air temperature **one hour into the future**.
+| Model and split | MAE, °C | RMSE, °C | R² |
+| --- | ---: | ---: | ---: |
+| Persistence baseline, validation | 0.5798 | 0.8051 | 0.99395 |
+| Random Forest, validation | 0.3581 | 0.5281 | 0.99740 |
+| Random Forest, test | 0.3739 | 0.5435 | 0.99793 |
 
-For an observation timestamp `t`, the prediction target is:
+The forest reduces validation MAE by **38.2%** compared with persistence.
+It uses 64 trees, a maximum depth of 12, a minimum leaf size of 4 and seed 143.
 
-```text
-temperature_2m(t + 1 hour)
-```
+![The monthly training DAG after a successful run](docs/images/airflow-retraining.png)
 
-Features are constructed only from information available at or before timestamp `t`.
+*Airflow: a completed monthly run, from fresh train/validation/test splits to model training and promotion.*
 
-This keeps the forecasting setup causal and prevents future observations from leaking into model training.
+![Metrics from the same run in MLflow](docs/images/mlflow-run.png)
 
----
+*MLflow: baseline and model metrics, training parameters and the registered model version from the same run.*
 
-## Technology Stack
+## Running it
 
-| Component              | Technology                         |
-| ---------------------- | ---------------------------------- |
-| Language               | Python                             |
-| Data processing        | Pandas                             |
-| Data validation        | Pandera                            |
-| ML model               | Scikit-learn RandomForestRegressor |
-| Weather source         | Open-Meteo                         |
-| Object storage         | MinIO                              |
-| Experiment tracking    | MLflow                             |
-| Model registry         | MLflow Model Registry              |
-| Workflow orchestration | Apache Airflow                     |
-| Prediction API         | FastAPI                            |
-| Web UI                 | Streamlit                          |
-| Airflow metadata DB    | PostgreSQL                         |
-| Containerization       | Docker / Docker Compose            |
+You'll need Docker Desktop with Linux containers, or Docker Engine with Compose v2.
+Run the commands below from the repository root. Python runs inside the containers.
 
----
+### First launch
 
-## Repository Structure
-
-```text
-weather-mlops-pipeline/
-│
-├── weather_forecasting/
-│   ├── datasets/
-│   │   ├── audit.py
-│   │   ├── backfill.py
-│   │   ├── cleaning.py
-│   │   ├── features.py
-│   │   ├── splitting.py
-│   │   ├── storage.py
-│   │   ├── validation.py
-│   │   └── weather_api.py
-│   │
-│   ├── models/
-│   │   ├── baseline.py
-│   │   ├── train.py
-│   │   ├── predict.py
-│   │   ├── evaluate.py
-│   │   ├── metrics.py
-│   │   ├── mlflow_utils.py
-│   │   └── registry.py
-│   │
-│   ├── pipelines/
-│   │   ├── prepare_training_data.py
-│   │   └── train_pipeline.py
-│   │
-│   ├── serving/
-│   │   └── service.py
-│   │
-│   └── config.py
-│
-├── services/
-│   ├── airflow/
-│   │   ├── Dockerfile
-│   │   └── dags/
-│   │       ├── weather_ingestion.py
-│   │       └── weather_retraining.py
-│   │
-│   ├── api/
-│   │   ├── Dockerfile
-│   │   └── main.py
-│   │
-│   ├── app/
-│   │   ├── Dockerfile
-│   │   └── app.py
-│   │
-│   └── mlflow/
-│       └── Dockerfile
-│
-├── docker-compose.yml
-├── .env.example
-└── README.md
-```
-
----
-
-# Quick Start
-
-## Prerequisites
-
-Install:
-
-* Git;
-* Docker Desktop or Docker Engine;
-* Docker Compose v2.
-
-Check the installation:
-
-```bash
-git --version
-docker --version
-docker compose version
-```
-
-The complete stack contains Airflow, MLflow, MinIO, PostgreSQL, FastAPI and Streamlit.
-
-Allocating approximately **4 GB of memory to Docker/WSL** is recommended for running all services simultaneously.
-
----
-
-## 1. Clone the Repository
-
-```bash
-git clone https://github.com/eclipz-afk/weather-mlops-pipeline.git
-cd weather-mlops-pipeline
-```
-
-All commands below are expected to be executed from the repository root.
-
----
-
-## 2. Configure Environment Variables
-
-Copy the example configuration.
-
-### Linux / macOS
-
-```bash
-cp .env.example .env
-```
-
-### Windows PowerShell
+Copy `.env.example` to `.env` and set the local passwords. In PowerShell:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Review `.env` before starting the project.
+On Linux or macOS, use `cp .env.example .env`.
 
-It contains configuration for MinIO, S3-compatible storage, MLflow, Airflow, PostgreSQL and application services.
+Build the images and start storage, MLflow and Airflow:
 
-Do not commit `.env` to Git.
-
----
-
-## 3. Start the Platform
-
-Build and start the services:
-
-```bash
-docker compose up -d --build
+```shell
+docker compose build
+docker compose up -d minio mlflow airflow-postgres airflow-webserver airflow-scheduler
 ```
 
-Check their state:
+The first build takes a while. MinIO is compiled from the pinned official source
+release because its old public Docker image is no longer available. The
+`airflow-init` service prepares the metadata database and creates the login user.
 
-```bash
-docker compose ps
+Load the weather history:
+
+```shell
+docker compose exec airflow-scheduler python -m weather_forecasting.datasets.backfill --start-date 2020-01-01 --end-date 2026-10-28
 ```
 
-The first startup may take longer because Docker needs to build or download the required images and initialize persistent services.
+These dates reproduce the run shown above. For a newer snapshot, move the end date
+forward, leaving seven full UTC days for the archive to catch up.
 
----
+Open [Airflow](http://localhost:8080), sign in with `AIRFLOW_ADMIN_USERNAME` and
+`AIRFLOW_ADMIN_PASSWORD` from `.env`, enable `weather_retraining` and trigger it.
+For the fixed snapshot above, set its `end_date` parameter to `2026-10-28`.
+Leaving it blank uses the archive cutoff for that run.
 
-## 4. Initialize the Project
+You can also start it from the terminal after loading history through the current
+archive cutoff:
 
-A clean installation requires historical weather data, a prepared ML dataset and an initial registered model.
-
-### Load historical observations
-
-Example:
-
-```bash
-python -m weather_forecasting.datasets.backfill \
-  --start-date 2000-01-01 \
-  --end-date 2026-09-16
+```shell
+docker compose exec airflow-scheduler airflow dags unpause weather_retraining
+docker compose exec airflow-scheduler airflow dags trigger weather_retraining
 ```
 
-This downloads historical weather observations, validates and processes them, and stores the resulting data in MinIO.
+Wait for `prepare_dataset`, `train_candidate` and `promote_candidate` to finish.
+Then start the API and UI:
 
-### Prepare the ML dataset
-
-```bash
-python -m weather_forecasting.pipelines.prepare_training_data \
-  --start-date 2000-01-01 \
-  --end-date 2026-09-16 \
-  --dataset-id weather-kazan-2000-2026-v1
+```shell
+docker compose up -d api app
 ```
 
-Use the same historical interval that was loaded during backfill.
+Open [Streamlit](http://localhost:8501) and choose a time within the loaded history.
+The model needs the observation at that time and the preceding 24 hours.
 
-The command performs feature engineering and publishes the chronological train, validation and test splits under the specified dataset ID.
+### After setup
 
-### Train the initial model
+Start everything with:
 
-```bash
-python -m weather_forecasting.pipelines.train_pipeline \
-  --dataset-id weather-kazan-2000-2026-v1
-```
-
-The training run and model artifact are recorded in MLflow.
-
-### Initialize the serving model
-
-Open Airflow:
-
-```text
-http://localhost:8080
-```
-
-Trigger the:
-
-```text
-weather_retraining
-```
-
-DAG.
-
-The retraining workflow evaluates the candidate model and, when it passes the quality gate, registers it and assigns the `champion` alias used by the prediction service.
-
----
-
-## 5. Normal Startup
-
-After the initial data and model artifacts have been created, start the project with:
-
-```bash
+```shell
 docker compose up -d
 ```
 
-Check the services:
+Enable `weather_ingestion` in Airflow for daily updates. Retraining runs monthly
+and creates fresh splits from the history starting in 2020. If the stack has been
+offline, backfill the missing days before the next training run.
 
-```bash
-docker compose ps
+After a new model is promoted, restart the API to load it:
+
+```shell
+docker compose restart api
 ```
 
-Airflow handles subsequent scheduled ingestion and retraining.
+Stop the stack with `docker compose down`. Data stays in the named volumes;
+adding `-v` deletes it.
 
----
+## Service addresses
 
-## 6. Service URLs
+| Service | Address |
+| --- | --- |
+| Streamlit | [localhost:8501](http://localhost:8501) |
+| FastAPI docs | [localhost:8000/docs](http://localhost:8000/docs) |
+| Airflow | [localhost:8080](http://localhost:8080) |
+| MLflow | [localhost:5000](http://localhost:5000) |
+| MinIO console | [localhost:9001](http://localhost:9001) |
 
-| Service         | Address                        |
-| --------------- | ------------------------------ |
-| Streamlit       | `http://localhost:8501`        |
-| FastAPI         | `http://localhost:8000`        |
-| FastAPI Swagger | `http://localhost:8000/docs`   |
-| FastAPI health  | `http://localhost:8000/health` |
-| Airflow         | `http://localhost:8080`        |
-| MLflow          | `http://localhost:5000`        |
-| MinIO Console   | `http://localhost:9001`        |
+MinIO uses `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` from `.env`.
+The published ports are bound to localhost.
 
-Airflow and MinIO credentials are configured through `.env`.
+To check the API:
 
----
-
-## 7. Stop the Platform
-
-```bash
-docker compose down
-```
-
-Persistent Docker volumes remain available for the next startup.
-
-Do not delete the volumes unless a complete reset of datasets, MLflow artifacts, registered models and service state is intended.
-
----
-
-# Data Pipeline
-
-Historical weather observations are retrieved from Open-Meteo.
-
-The ingestion flow is:
-
-```text
-Open-Meteo
-    │
-    ▼
-Raw observations
-    │
-    ▼
-Pandera validation
-    │
-    ▼
-Data cleaning
-    │
-    ▼
-Processed observations
-    │
-    ▼
-MinIO
-```
-
-Raw and processed datasets are stored separately.
-
-MinIO is also used for prepared ML datasets and MLflow model artifacts.
-
-Recurring ingestion is orchestrated by the Airflow DAG:
-
-```text
-weather_ingestion
-```
-
-defined in:
-
-```text
-services/airflow/dags/weather_ingestion.py
-```
-
----
-
-# Feature Engineering
-
-Processed weather observations are transformed into supervised time-series samples.
-
-The model receives features available at or before observation time `t` and predicts temperature at `t + 1 hour`.
-
-The feature engineering layer includes historical and temporal information such as:
-
-```text
-lag features
-rolling features
-temporal features
-```
-
-The resulting relationship is:
-
-```text
-historical observations
-        │
-        ▼
-feature engineering
-        │
-        ▼
-features at time t
-        │
-        ▼
-RandomForestRegressor
-        │
-        ▼
-temperature at t + 1 hour
-```
-
-The same feature-generation logic is reused during training and inference so that the serving feature schema matches the schema used to train the model.
-
----
-
-# ML Dataset
-
-Prepared datasets are versioned using a dataset ID, for example:
-
-```text
-weather-kazan-2000-2026-v1
-```
-
-Each dataset contains chronological:
-
-```text
-train
-validation
-test
-```
-
-splits.
-
-The data is not randomly shuffled because this is a time-series forecasting problem.
-
-Chronological splitting ensures that future observations do not leak into earlier training samples.
-
----
-
-# Model Training
-
-The forecasting model is a Scikit-learn:
-
-```text
-RandomForestRegressor
-```
-
-A Random Forest trains multiple decision trees on different samples and feature subsets and combines their predictions.
-
-For regression, the final forecast is obtained by averaging the predictions produced by the individual trees.
-
-The default project configuration is:
-
-```text
-n_estimators       = 64
-max_depth          = 12
-min_samples_split  = 2
-min_samples_leaf   = 4
-random_state       = 143
-n_jobs             = 1
-```
-
-The training pipeline:
-
-```text
-load dataset
-    │
-    ▼
-train / val / test
-    │
-    ├───────────────┐
-    ▼               ▼
-persistence      Random Forest
-baseline          training
-    │               │
-    ▼               ▼
-baseline val     model val
-metrics          metrics
-    │               │
-    └───────┬───────┘
-            │
-            ▼
-       test metrics
-            │
-            ▼
-          MLflow
-```
-
-The training implementation is separated into:
-
-```text
-weather_forecasting/models/train.py
-```
-
-for model training and:
-
-```text
-weather_forecasting/pipelines/train_pipeline.py
-```
-
-for the complete training workflow.
-
----
-
-# Baseline and Evaluation
-
-The Random Forest is evaluated against a persistence baseline.
-
-The baseline assumes:
-
-```text
-prediction(t + 1) = temperature(t)
-```
-
-In other words, the most recent observed temperature is used as the forecast for the next hour.
-
-Three groups of metrics are recorded:
-
-```text
-baseline validation metrics
-model validation metrics
-model test metrics
-```
-
-MLflow stores them using:
-
-```text
-baseline_val_*
-model_val_*
-test_*
-```
-
-The validation set is used for candidate comparison and model promotion decisions.
-
-The test set remains a separate final evaluation split.
-
----
-
-# MLflow and Model Registry
-
-MLflow tracks:
-
-* training parameters;
-* validation metrics;
-* test metrics;
-* model artifacts;
-* model versions.
-
-The trained model is not committed to Git.
-
-Instead:
-
-```text
-training
-    │
-    ▼
-MLflow run
-    │
-    ▼
-model artifact
-    │
-    ▼
-MinIO
-```
-
-The registered model is:
-
-```text
-weather-temperature-forecaster
-```
-
-The model selected for serving receives the alias:
-
-```text
-champion
-```
-
-FastAPI therefore loads:
-
-```text
-models:/weather-temperature-forecaster@champion
-```
-
-This separates model training from deployment and allows the serving model to be updated through the registry without committing generated model files to the repository.
-
----
-
-# Automated Retraining
-
-Automated retraining is orchestrated by:
-
-```text
-weather_retraining
-```
-
-defined in:
-
-```text
-services/airflow/dags/weather_retraining.py
-```
-
-The workflow performs:
-
-```text
-train candidate
-      │
-      ▼
-evaluate validation metrics
-      │
-      ▼
-compare with baseline
-      │
-      ├── candidate rejected
-      │       │
-      │       ▼
-      │   keep current champion
-      │
-      └── candidate accepted
-              │
-              ▼
-        register model
-              │
-              ▼
-        assign champion
-```
-
-Airflow handles orchestration while the reusable data and ML implementation remains inside the `weather_forecasting` package.
-
----
-
-# Prediction Service
-
-FastAPI provides the model-serving layer.
-
-Interactive API documentation:
-
-```text
-http://localhost:8000/docs
-```
-
-Health check:
-
-```bash
+```shell
 curl http://localhost:8000/health
 ```
 
-Windows PowerShell:
+To request a prediction from PowerShell:
 
 ```powershell
-curl.exe http://localhost:8000/health
+Invoke-RestMethod -Method Post -Uri http://localhost:8000/predict -ContentType 'application/json' -Body '{"timestamp":"2026-10-28T12:00:00Z"}'
 ```
 
-The prediction endpoint is:
+The response includes the input timestamp, the next-hour timestamp and the predicted
+temperature in °C. This example returned **8.41 °C** in the recorded run.
+
+## Where things live
 
 ```text
-POST /predict
+weather_forecasting/       data processing, training and prediction code
+services/airflow/          DAGs, Dockerfile and dependencies
+services/api/              FastAPI application
+services/app/              Streamlit application
+services/mlflow/           MLflow server image
+services/minio/            MinIO source build
+docs/images/              application and pipeline screenshots
+docker-compose.yml        local stack
+.env.example               environment template
 ```
 
-Example:
+MinIO keeps daily weather under `raw/weather/` and `processed/weather/`.
+Prepared splits live under `processed/ml/dataset_id=.../`, alongside their manifest
+and `_SUCCESS` marker. Each training run gets its own dataset version; retries
+reuse the completed version. Airflow passes dataset IDs through XCom rather than
+moving DataFrames between tasks.
 
-```bash
-curl -X POST http://localhost:8000/predict \
-  -H "Content-Type: application/json" \
-  -d '{"timestamp":"2020-01-02T12:00:00Z"}'
-```
+## About the data
 
-For each request, the service:
+This version works with archived weather. You choose a past observation and get
+a prediction for the following hour; it doesn't fetch live weather for a forecast
+from the current time. Archive data arrives with a delay, so ingestion leaves a
+seven-day gap.
 
-```text
-timestamp
-    │
-    ▼
-load required weather history
-    │
-    ▼
-construct model features
-    │
-    ▼
-load champion from MLflow
-    │
-    ▼
-predict temperature
-```
-
-The response contains the observation timestamp, forecast target timestamp and predicted temperature.
-
----
-
-# Streamlit Application
-
-The Streamlit application is available at:
-
-```text
-http://localhost:8501
-```
-
-Streamlit does not load the ML model directly.
-
-Instead:
-
-```text
-Browser
-    │
-    ▼
-Streamlit
-    │
-    │ POST /predict
-    ▼
-FastAPI
-    │
-    ├────────▶ MLflow Model Registry
-    │
-    └────────▶ MinIO
-                   │
-                   ▼
-               prediction
-```
-
-This keeps the user interface separate from the model-serving layer.
-
----
-
-# Project Lifecycle
-
-The complete workflow is:
-
-```text
-Open-Meteo
-    │
-    ▼
-Data Ingestion
-    │
-    ▼
-Validation & Cleaning
-    │
-    ▼
-MinIO
-    │
-    ▼
-Feature Engineering
-    │
-    ▼
-Chronological Train / Val / Test
-    │
-    ▼
-Persistence Baseline
-    │
-    ▼
-RandomForestRegressor
-    │
-    ▼
-MLflow
-    │
-    ▼
-Model Registry
-    │
-    ▼
-champion
-    │
-    ▼
-FastAPI
-    │
-    ▼
-Streamlit
-```
-
-Airflow automates recurring ingestion and retraining, MLflow tracks experiments and manages model versions, MinIO stores datasets and model artifacts, FastAPI provides the prediction interface, and Streamlit provides the user-facing application.
+The source is the [Open-Meteo Historical Weather API](https://open-meteo.com/en/docs/historical-weather-api).
+It provides reconstructed weather data for the selected coordinates
+(`55.752085, 48.744618`), rather than measurements from a sensor in the city.
