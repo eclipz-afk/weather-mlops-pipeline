@@ -1,7 +1,5 @@
 """Data-quality measurements for cleaned weather datasets."""
 
-from __future__ import annotations
-
 import logging
 from dataclasses import asdict, dataclass, field
 from typing import Any
@@ -47,25 +45,8 @@ class DataQualityReport:
 
 
 def _normalize_timestamp(df: pd.DataFrame) -> pd.Series:
-    """Return ``timestamp`` as a non-null UTC Series without mutating ``df``."""
-    if "timestamp" not in df.columns:
-        raise ValueError("DataFrame must have a 'timestamp' column")
-
-    timestamp = df["timestamp"]
-    try:
-        if pd.api.types.is_datetime64_any_dtype(timestamp):
-            if timestamp.dt.tz is None:
-                raise ValueError("'timestamp' must be timezone aware, not tz-naive")
-            timestamp_utc = timestamp.dt.tz_convert("UTC")
-        else:
-            timestamp_utc = pd.to_datetime(timestamp, utc=True, errors="raise")
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"'timestamp' must be datetime-like: {exc}") from exc
-
-    if timestamp_utc.isna().any():
-        raise ValueError("'timestamp' contains NaT values")
-
-    return timestamp_utc.dt.as_unit("ns")
+    """Normalize the timestamps read from processed weather partitions."""
+    return pd.to_datetime(df["timestamp"], utc=True).dt.as_unit("ns")
 
 
 def _frequency_delta(expected_frequency: str) -> pd.Timedelta:

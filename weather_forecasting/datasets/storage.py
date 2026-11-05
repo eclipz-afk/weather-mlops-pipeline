@@ -48,11 +48,6 @@ def _get_client():
     return _client
 
 def _layer_prefix(layer: Layer) -> str:
-    if layer not in _LAYER_PREFIXES:
-        raise ValueError(
-            f"unknown layer '{layer!r}' expected one of "
-            f"{sorted(_LAYER_PREFIXES.keys())}"
-        )
     return _LAYER_PREFIXES[layer]
 
 def _day_partition(ts: pd.Timestamp) -> tuple[int, int, int]:
@@ -157,10 +152,6 @@ def write_partition(
     is idempotent. With ``skip_existing=True``, an existing object is kept.
     """
     
-    if "timestamp" not in df.columns:
-        raise ValueError(
-            "df must have a 'timestamp' column"
-        )
     if df.empty:
         logger.info(
             "write_partition: empty DataFrame, nothing to write"
@@ -222,8 +213,6 @@ def write_ml_splits(
         "val": (X_val, y_val),
         "test": (X_test, y_test),
     }
-    _check_split_consistency(splits)
-
     base_prefix = ml_dataset_prefix(version)
     success_key = ml_success_key(version)
     _ensure_bucket()
@@ -269,40 +258,6 @@ def write_ml_splits(
     except Exception:
         _delete_objects_quietly(uploaded_keys)
         raise
-
-
-def _check_xy_pair(name: str, X: pd.DataFrame, y: pd.Series) -> None:
-    """Validate one feature/target pair before it is persisted."""
-    if X.empty or y.empty:
-        raise ValueError(f"{name} split is empty")
-    if len(X) != len(y):
-        raise ValueError(f"{name}: X/y length mismatch")
-    if not X.index.equals(y.index):
-        raise ValueError(f"{name}: X/y indexes are not aligned")
-    if y.name is None or not str(y.name):
-        raise ValueError(f"{name}: target series must have a name")
-    if y.name in X.columns:
-        raise ValueError(f"{name}: target column is present in X")
-    if X.columns.duplicated().any():
-        raise ValueError(f"{name}: X contains duplicate feature columns")
-    if X.isna().any().any() or y.isna().any():
-        raise ValueError(f"{name}: NaN values found")
-
-
-def _check_split_consistency(
-    splits: Mapping[str, tuple[pd.DataFrame, pd.Series]],
-) -> None:
-    """Validate all split contracts and their shared schema."""
-    for name, (X, y) in splits.items():
-        _check_xy_pair(name, X, y)
-
-    reference_columns = list(splits["train"][0].columns)
-    target_name = splits["train"][1].name
-    for name, (X, y) in splits.items():
-        if list(X.columns) != reference_columns:
-            raise ValueError(f"{name}: feature columns differ from train")
-        if y.name != target_name:
-            raise ValueError(f"{name}: target name differs from train")
 
 
 def _combine_xy(X: pd.DataFrame, y: pd.Series) -> pd.DataFrame:
@@ -353,9 +308,6 @@ def write_json_report(
     botocore.exceptions.ClientError
         If the upload fails.
     """
-    if not key:
-        raise ValueError("key must be a non-empty string")
-    
     _ensure_bucket()
     body = json.dumps(report, indent=2, ensure_ascii=False, allow_nan=False)
     client = _get_client()
@@ -411,111 +363,18 @@ def read_ml_manifest(dataset_id: str) -> dict[str, Any]:
             f"ML dataset is not published or does not exist: dataset_id={version}"
         )
     
-    manifest_key = ml_manifest_key(version)
-    
-    try:
-        obj = _get_client().get_object(Bucket=S3_BUCKET, Key=manifest_key)
-    except ClientError as e:
-        code = e.response.get("Error", {}).get("Code", "")
-        if code in _MISSING_OBJECT_CODES:
-            raise FileNotFoundError(
-                f"published ML dataset has no manifest: dataset_id={version}"
-            ) from e
-        raise
-    
-    try:
-        manifest = json.loads(obj["Body"].read().decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as e:
-        raise ValueError(
-            f"ML dataset manifest is invalid JSON: dataset: dataset_id={version}"
-        ) from e
-
-    if not isinstance(manifest, dict):
-        raise ValueError(
-            "ML dataset manifest must be a JSON"
-        )
-    if manifest.get("dataset_id") != version:
-        raise ValueError(
-            "ML dataset manifest dataset_id does not match requested dataset_id"
-        )
-    
-    target_column = manifest.get("target_column")
-    if not isinstance(target_column, str) or not target_column:
-        raise ValueError(
-            "ML dataset manifest has no valid target_column"
-        )
-    
-    feature_columns = manifest.get("feature_columns")
-    if not isinstance(feature_columns, list) or not all(
-        isinstance(column, str) for column in feature_columns
-    ):
-        raise ValueError(
-            "ML dataset manifest has no valid feature_columns"
-        )
-    
-    splits = manifest.get("splits")
-    if not isinstance(splits, dict):
-        raise ValueError(
-            "ML dataset manifest has no splits section"
-        )
-    
-    for split in ("train", "val", "test"):
-        split_info = splits.get(split)
-        
-        if not isinstance(split_info, dict):
-            raise ValueError(
-                f"ML dataset has no {split} split"
-            )
-        if split_info.get("key") != ml_split_key(split, dataset_id=version):
-            raise ValueError(
-                f"ML dataset manifest has invalid {split} key"
-            )
-    return manifest
+    obj = _get_client().get_object(Bucket=S3_BUCKET, Key=ml_manifest_key(version))
+    return json.loads(obj["Body"].read())
 
 def read_ml_split(
     dataset_id: str,
     split: MLSPLIT,
 ) -> tuple[pd.DataFrame, pd.Series]:
-    if split not in {"train", "val", "test"}:
-        raise ValueError(
-            f"unknown ML split: {split}"
-        )
     manifest = read_ml_manifest(dataset_id)
     target_column = manifest["target_column"]
-    expected_features = manifest["feature_columns"]
     key = manifest["splits"][split]["key"]
-    
-    try:
-        frame = _read_parquet_key(key)
-    except ClientError as e:
-        code = e.response.get("Error", {}).get("Code", "")
-        if code in _MISSING_OBJECT_CODES:
-            raise FileNotFoundError(
-                f"ML dataset split is missing: dataset_id={dataset_id}, split={split}"
-            ) from e
-        raise
-    
-    if frame.empty:
-        raise ValueError(
-            f"ML dataset split is empty: dataset_id={dataset_id}"
-        )
-    if target_column not in frame.columns:
-        raise ValueError(
-            f"ML dataset split has no target column {target_column!r}: split={split}"
-        )
-    
+    frame = _read_parquet_key(key)
     y = frame.pop(target_column)
-    if list(frame.columns) != expected_features:
-        raise ValueError(
-            f"ML dataset split feature schema differs from manifest: split={split}"
-        )
-
-    if frame.isna().any().any() or y.isna().any():
-        raise ValueError(
-            f"ML dataset split contains NaN values: dataset_id={dataset_id}, split={split}"
-        )
-
-    y.name = target_column
     return frame, y
 
 def _day_keys_between(

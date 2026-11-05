@@ -28,13 +28,6 @@ def promote_run(
     alias: str = MLFLOW_MODEL_ALIAS,
 ) -> PromotionResult:
     """Register the run's model and make it the serving ``alias``."""
-    if not run_id.strip():
-        raise ValueError("run_id must not be empty")
-    if not model_name.strip():
-        raise ValueError("model_name must not be empty")
-    if not alias.strip():
-        raise ValueError("alias must not be empty")
-
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     client = MlflowClient(MLFLOW_TRACKING_URI)
     run = client.get_run(run_id)

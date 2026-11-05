@@ -30,7 +30,7 @@ def _validate_date_range(start_date: str, end_date: str) -> None:
 
     if start > end:
         raise ValueError(
-            f"start_date must be strictly before end_date; "
+            f"start_date must not be later than end_date; "
             f"got {start_date} and {end_date}"
         )
 
@@ -70,8 +70,6 @@ def backfill_weather(
         If the API request fails permanently.
     pandera.errors.PanderaError
         If validation fails.
-    ValueError
-        If cleaning detects a contract violation.
     botocore.exceptions.ClientError
         If the storage layer fails.
     """

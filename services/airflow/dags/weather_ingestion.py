@@ -3,9 +3,6 @@ from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
-from weather_forecasting.datasets.backfill import backfill_weather
-
-
 DEFAULT_ARGS = {
     "owner": "weather-mlops",
     "retries": 2,
@@ -15,8 +12,11 @@ DEFAULT_ARGS = {
 
 def ingest_completed_day(**context) -> dict[str, str]:
     """Fetch, validate and write the completed UTC data interval to MinIO."""
-    data_interval_start = context["data_interval_start"]
-    data_interval_end = context["data_interval_end"]
+    from weather_forecasting.datasets.backfill import backfill_weather
+
+    lag = timedelta(days=int(context["params"]["archive_lag_days"]))
+    data_interval_start = context["data_interval_start"] - lag
+    data_interval_end = context["data_interval_end"] - lag
 
     start_date = data_interval_start.date()
     end_date = (data_interval_end - timedelta(microseconds=1)).date()
@@ -35,7 +35,9 @@ with DAG(
     start_date=datetime(2026, 9, 14),
     schedule="@daily",
     catchup=False,
+    max_active_runs=1,
     is_paused_upon_creation=True,
+    params={"archive_lag_days": 7},
     tags=["weather", "ingestion", "minio"],
 ) as dag:
     ingest_weather = PythonOperator(

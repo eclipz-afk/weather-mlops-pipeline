@@ -1,4 +1,4 @@
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 import os
 
 import requests
@@ -6,13 +6,17 @@ import streamlit as st
 
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000").rstrip("/")
 
-st.set_page_config(page_title="Kazan temperature forecast", page_icon="🌡️")
+st.set_page_config(page_title="Innopolis temperature forecast", page_icon="🌡️")
 st.title("Temperature prediction in Innopolis")
 st.caption("The model predicts temperature in 1 hour based on previous observations")
 
 left, right = st.columns(2)
 with left:
-    selected_date = st.date_input("Observation date (UTC)", value=date(2020, 1, 2))
+    selected_date = st.date_input(
+        "Observation date (UTC)",
+        value=datetime.now(timezone.utc).date() - timedelta(days=8),
+        min_value=date(2020, 1, 2),
+    )
 with right:
     selected_time = st.time_input("Observation time (UTC)", value=time(12, 0))
 
@@ -28,7 +32,7 @@ if st.button("Get prediction", type="primary"):
         result = response.json()
     except requests.RequestException as exc:
         detail = exc.response.text if exc.response is not None else str(exc)
-        st.error(f"API is not reached: {detail}")
+        st.error(f"Prediction unavailable: {detail}")
     else:
         st.metric(
             "Temperature in 1 hour",

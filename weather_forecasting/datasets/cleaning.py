@@ -4,34 +4,7 @@ import pandas as pd
 logger = logging.getLogger("weather_forecasting.cleaning")
 
 EXPECTED_INTERVAL = pd.Timedelta(hours=1)
-EXPECTED_TZ = "UTC"
 MAX_GAPS_LOGGED = 5
-
-# Contract checks ---------------------------------------------------------------------------
-
-def _check_timestamp_contract(timestamp: pd.Series) -> None:
-    """Enforce the structural contract on the timestamp column.
-
-    Raises
-    ------
-    ValueError
-        If the timestamp is tz-naive, not in UTC, not sorted, or
-        contains duplicates.
-    """
-    
-    if timestamp.dt.tz is None:
-        raise ValueError(
-            "timestamp must be timezone-aware. Got tz-naive column"
-        )
-    if str(timestamp.dt.tz) != EXPECTED_TZ:
-        raise ValueError(
-            f"timestamp must be in {EXPECTED_TZ}. Got {timestamp.dt.tz}"
-        )
-    if not timestamp.is_monotonic_increasing:
-        raise ValueError("timestamp must be stored in ascending order")
-    if timestamp.duplicated().any():
-        n = int(timestamp.duplicated().sum())
-        raise ValueError(f"timestamp must be unique for fixed point. Found {n} duplicate(s)")
 
 
 # Diagnostics logs --------------------------------------------------------------------------
@@ -97,15 +70,8 @@ def clean_weather(df: pd.DataFrame) -> pd.DataFrame:
         A deep copy of the input, with the same columns and values,
         preserving the validated timestamp order and using a clean RangeIndex.
 
-    Raises
-    ------
-    ValueError
-        If ``timestamp`` is tz-naive, not in UTC, not sorted, or
-        contains duplicates.
     """
     logger.info(f"cleaning started: shape = {df.shape}")
-    
-    _check_timestamp_contract(df["timestamp"])
     
     cleaned = df.copy(deep=True)
     

@@ -60,7 +60,13 @@ def log_to_mlflow(
         
         mlflow.log_params(_stringify(params))
         mlflow.log_metrics(metrics)
-        mlflow.sklearn.log_model(model, name=MODEL_ARTIFACT_PATH)
+        # This pipeline fits sklearn trees locally. Recent skops versions require
+        # their node storage to be explicitly trusted when saving a forest.
+        mlflow.sklearn.log_model(
+            model,
+            name=MODEL_ARTIFACT_PATH,
+            skops_trusted_types=["sklearn.tree._tree.Tree"],
+        )
         
         logger.info(f"mlflow run logged: run_id={run.info.run_id} experiment={MLFLOW_EXPERIMENT_NAME}")
         return run.info.run_id

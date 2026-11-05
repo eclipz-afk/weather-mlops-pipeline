@@ -55,6 +55,14 @@ def prepare_training_dataset(
         start=start_utc,
         end=end_utc
     )
+
+    if weather_df.empty:
+        raise ValueError("no processed weather data in the requested interval; run backfill first")
+    if weather_df["timestamp"].min() > start_utc or weather_df["timestamp"].max() < end_utc:
+        raise ValueError(
+            "processed weather does not cover the requested start/end; "
+            "load the missing dates before preparing fresh splits"
+        )
     
     report = audit_weather(weather_df)
     require_acceptable_quality(report)

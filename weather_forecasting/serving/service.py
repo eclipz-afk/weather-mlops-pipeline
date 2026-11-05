@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 import mlflow.pyfunc
+from mlflow.tracking import MlflowClient
 import pandas as pd
 
 from weather_forecasting.config import SERVING_DATASET_ID, SERVING_MODEL_URI
@@ -19,9 +20,14 @@ class PredictionService:
 
     def load(self) -> None:
         """Load the promoted model and its immutable feature schema."""
+        model = mlflow.pyfunc.load_model(self.model_uri)
+        run_id = model.metadata.run_id
+        if run_id:
+            run = MlflowClient().get_run(run_id)
+            self.dataset_id = run.data.params.get("dataset_id", self.dataset_id)
         manifest = read_ml_manifest(self.dataset_id)
         self._feature_columns = list(manifest["feature_columns"])
-        self._model = mlflow.pyfunc.load_model(self.model_uri)
+        self._model = model
 
     @property
     def ready(self) -> bool:
@@ -43,10 +49,10 @@ class PredictionService:
             start=ts - pd.Timedelta(hours=max(LAG_HOURS)),
             end=ts,
         )
+        if history.empty or history["timestamp"].iloc[-1] != ts:
+            raise ValueError(f"no processed weather observation for {ts.isoformat()}")
         featured = build_features(history)
         row = featured.loc[featured["timestamp"] == ts]
-        if row.empty:
-            raise ValueError(f"no processed weather observation for {ts.isoformat()}")
 
         X = row.loc[:, self._feature_columns]
         if X.isna().any().any():

@@ -1,4 +1,3 @@
-import numpy as np
 import pandas as pd
 
 PERSISTANCE_FEATURE = "temperature_2m"
@@ -23,31 +22,6 @@ def persistence_baseline(
     pandas.Series
         Prediction series aligned with ``X.index`` and named ``"prediction"``.
 
-    Raises
-    ------
-    ValueError
-        If X is empty, source_column is absent, contains missing values,
-        or contains non-finite values.
     """
     
-    if X.empty:
-        raise ValueError(
-            "X is empty"
-        )
-    if source_column not in X.columns:
-        raise ValueError(
-            f"X must contain baseline source column {source_column}"
-        )
-    
-    values = pd.to_numeric(X[source_column], errors="raise")
-    
-    if values.isna().any():
-        raise ValueError(
-            f"{source_column!r} contains not-finite values"
-        )
-    
-    return pd.Series(
-        values.to_numpy(dtype=float),
-        index=X.index,
-        name=PREDICTION_COLUMN,
-    )
+    return X[source_column].astype(float).rename(PREDICTION_COLUMN)

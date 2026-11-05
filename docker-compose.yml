@@ -2,7 +2,9 @@ name: deployment
 
 services:
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z
+    build:
+      context: services/minio
+    image: weather-mlops-minio:RELEASE.2025-07-23T15-54-02Z
     restart: unless-stopped
     ports:
       - "127.0.0.1:9000:9000"
@@ -14,7 +16,7 @@ services:
       - minio_data:/data
     command: server /data --console-address ":9001"
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
       interval: 10s
       timeout: 5s
       retries: 5

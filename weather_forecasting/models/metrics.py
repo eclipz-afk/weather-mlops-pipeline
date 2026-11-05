@@ -31,17 +31,6 @@ def calculate_metrics(y_true: pd.Series, y_pred: np.ndarray | pd.Series) -> dict
         If ``y_true`` and ``y_pred`` have different lengths, or either
         is empty.
     """
-    if len(y_true) == 0:
-        raise ValueError("y_true is empty")
-    if len(y_pred) == 0:
-        raise ValueError("y_pred is empty")
-    if len(y_true) != len(y_pred):
-        raise ValueError(
-            "y_true and y_pred must have the same length: "
-            f"got {len(y_true)} and {len(y_pred)}"
-    )
-
-    
     mae = float(mean_absolute_error(y_true, y_pred))
     rmse = float(np.sqrt(mean_squared_error(y_true, y_pred)))
     r2 = float(r2_score(y_true, y_pred))

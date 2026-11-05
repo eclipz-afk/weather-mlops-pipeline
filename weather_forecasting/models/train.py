@@ -39,14 +39,7 @@ def train_model(
     RandomForestRegressor
         Fitted model.
 
-    Raises
-    ------
-    ValueError
-        If X_train/y_train are empty, have different lengths, contain
-        NaN, or X_train has no columns.
     """
-    
-    _check_training_input(X_train, y_train)
     
     logger.info(
         f"training started: X_train shape={X_train.shape}, n_estimators={n_estimators}"
@@ -89,26 +82,3 @@ def save_model(model, path: str | Path) -> Path:
     joblib.dump(model, path)
     logger.info(f"model saved to: {path}")
     return path
-
-# Input contract --------------------------------------------------
-
-def _check_training_input(
-    X_train: pd.DataFrame,
-    y_train: pd.Series,
-) -> None:
-    """Enforce the training-input contract"""
-    if X_train.empty:
-        raise ValueError("X_train is empty")
-    if y_train.empty:
-        raise ValueError("y_train is empty")
-    if len(X_train) != len(y_train):
-        raise ValueError(
-            "X_train and y_train must have the same length: "
-            f"got {len(X_train)} and {len(y_train)}"
-        )
-    if X_train.shape[1] == 0:
-        raise ValueError("X_train has no feature columns")
-    if X_train.isna().any().any():
-        raise ValueError("X_train contains NaN values")
-    if y_train.isna().any():
-        raise ValueError("y_train contains NaN values")

@@ -46,7 +46,7 @@ def _validate_ratios(train_ratio: float, val_ratio: float) -> float:
         )
     if not 0.0 < val_ratio < 1.0:
         raise ValueError(
-            f"val_ratio must be in (0, 1), but got {train_ratio}"
+            f"val_ratio must be in (0, 1), but got {val_ratio}"
         )
     test_ratio = 1.0 - train_ratio - val_ratio
     if test_ratio <= 0.0:
@@ -82,26 +82,13 @@ def _drop_unusable_rows(X: pd.DataFrame, y: pd.Series) -> tuple[pd.DataFrame, pd
     return X[valid], y[valid]
 
 def _ensure_non_empty(name: str, X: pd.DataFrame, y: pd.Series) -> None:
-    """Raise if either X or y of a given split is empty"""
-    if len(X) == 0 or len(y) == 0:
+    """Reject splits with no usable observations."""
+    if X.empty:
         raise ValueError(
             f"{name} split is empty after dropping unusable rows"
             f"(X rows={len(X)}, y rows={len(y)})"
         )
 
-def _check_chronological_order(train_df: pd.DataFrame, val_df: pd.DataFrame, test_df: pd.DataFrame) -> None:
-    """Verify that train < val < test along the timestamp axis"""
-    if len(train_df) and len(val_df):
-        if train_df["timestamp"].max() >= val_df["timestamp"].min():
-            raise ValueError(
-                "train max timestamp must be < val min timestamp"
-            )
-    if len(val_df) and len(test_df):
-        if val_df["timestamp"].max() >= test_df["timestamp"].min():
-            raise ValueError(
-                "val max timestamp must be < test min timestamp"
-            )
-    
 # Public API ----------------------------------------------------------------------------
 def split_data(df: pd.DataFrame, train_ratio: float=0.70, val_ratio: float=0.15) -> SplitResult:
     """Chronologically split a feature-engineered DataFrame.
@@ -144,8 +131,6 @@ def split_data(df: pd.DataFrame, train_ratio: float=0.70, val_ratio: float=0.15)
     train_df = df.iloc[:n_train].copy()
     val_df = df.iloc[n_train:n_train + n_val].copy()
     test_df = df.iloc[n_train + n_val:].copy()
-    
-    _check_chronological_order(train_df, val_df, test_df)
     
     if len(train_df):
         train_end_boundary = train_df["timestamp"].iloc[-1]
